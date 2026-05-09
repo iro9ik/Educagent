@@ -1,0 +1,98 @@
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\legen\package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * C:\Users\legen\Downloads\PROJECT\Educagent\frontend\package-lock.json
+
+[browser] Failed to load chat: TypeError: Failed to fetch
+    at s.fetch (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/libs/requests.js:1:3798)
+    at <unknown> (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/executors/200.js:1:1130)
+    at Object.getChat (src/lib/api.ts:106:23)
+    at ClientApp.useCallback[loadChat] (src/components/ClientApp.tsx:114:32)
+    at ClientApp.useEffect (src/components/ClientApp.tsx:164:7)
+  104 |
+  105 |   async getChat(chatId: string) {
+> 106 |     const res = await fetch(`${API_BASE}/chat/${chatId}`);
+      |                       ^
+  107 |     if (!res.ok) throw new Error("Failed to get chat");
+  108 |     return res.json();
+  109 |   }, (src/components/ClientApp.tsx:133:17)
+[browser] Failed to refresh chat list: TypeError: Failed to fetch
+    at s.fetch (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/libs/requests.js:1:3798)
+    at <unknown> (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/executors/200.js:1:1130)
+    at Object.getHistory (src/lib/api.ts:99:23)
+    at ClientApp.useCallback[refreshChatList] (src/components/ClientApp.tsx:88:31)
+    at ClientApp.useEffect (src/components/ClientApp.tsx:105:5)
+   97 |
+   98 |   async getHistory() {
+>  99 |     const res = await fetch(`${API_BASE}/chats`);
+      |                       ^
+  100 |     if (!res.ok) throw new Error("Failed to get history");
+  101 |     const data = await res.json();
+  102 |     return data.chats || []; (src/components/ClientApp.tsx:91:15)
+[browser] Failed to refresh uploaded files: TypeError: Failed to fetch
+    at s.fetch (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/libs/requests.js:1:3798)
+    at <unknown> (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/executors/200.js:1:1130)
+    at Object.getUploadedFiles (src/lib/api.ts:287:23)
+    at ClientApp.useCallback[refreshUploadedFiles] (src/components/ClientApp.tsx:97:34)
+    at ClientApp.useEffect (src/components/ClientApp.tsx:106:5)
+  285 |
+  286 |   async getUploadedFiles(): Promise<string[]> {
+> 287 |     const res = await fetch(`${API_BASE}/files`);
+      |                       ^
+  288 |     if (!res.ok) throw new Error("Failed to list uploaded files");
+  289 |     const data = await res.json();
+  290 |     return data.files || []; (src/components/ClientApp.tsx:99:15)
+[browser] Failed to refresh chat list: TypeError: Failed to fetch
+    at s.fetch (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/libs/requests.js:1:3798)
+    at <unknown> (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/executors/200.js:1:1130)
+    at Object.getHistory (src/lib/api.ts:99:23)
+    at ClientApp.useCallback[refreshChatList] (src/components/ClientApp.tsx:88:31)
+    at ClientApp.useEffect (src/components/ClientApp.tsx:105:5)
+   97 |
+   98 |   async getHistory() {
+>  99 |     const res = await fetch(`${API_BASE}/chats`);
+      |                       ^
+  100 |     if (!res.ok) throw new Error("Failed to get history");
+  101 |     const data = await res.json();
+  102 |     return data.chats || []; (src/components/ClientApp.tsx:91:15)
+[browser] Failed to refresh uploaded files: TypeError: Failed to fetch
+    at s.fetch (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/libs/requests.js:1:3798)
+    at <unknown> (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/executors/200.js:1:1130)
+    at Object.getUploadedFiles (src/lib/api.ts:287:23)
+    at ClientApp.useCallback[refreshUploadedFiles] (src/components/ClientApp.tsx:97:34)
+    at ClientApp.useEffect (src/components/ClientApp.tsx:106:5)
+  285 |
+  286 |   async getUploadedFiles(): Promise<string[]> {
+> 287 |     const res = await fetch(`${API_BASE}/files`);
+      |                       ^
+  288 |     if (!res.ok) throw new Error("Failed to list uploaded files");
+  289 |     const data = await res.json();
+  290 |     return data.files || []; (src/components/ClientApp.tsx:99:15)
+[browser] Failed to load chat: TypeError: Failed to fetch
+    at s.fetch (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/libs/requests.js:1:3798)
+    at <unknown> (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/executors/200.js:1:1130)
+    at Object.getChat (src/lib/api.ts:106:23)
+    at ClientApp.useCallback[loadChat] (src/components/ClientApp.tsx:114:32)
+    at ClientApp.useEffect (src/components/ClientApp.tsx:164:7)
+  104 |
+  105 |   async getChat(chatId: string) {
+> 106 |     const res = await fetch(`${API_BASE}/chat/${chatId}`);
+      |                       ^
+  107 |     if (!res.ok) throw new Error("Failed to get chat");
+  108 |     return res.json();
+  109 |   }, (src/components/ClientApp.tsx:133:17)
+[browser] Failed to load settings TypeError: Failed to fetch
+    at s.fetch (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/libs/requests.js:1:3798)
+    at <unknown> (chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/executors/200.js:1:1130)
+    at Object.getSettings (src/lib/api.ts:253:23)
+    at SettingsModal.useCallback[loadSettings] (src/components/SettingsModal.tsx:46:30)
+    at SettingsModal.useEffect.id (src/components/SettingsModal.tsx:64:9)
+  251 |
+  252 |   async getSettings() {
+> 253 |     const res = await fetch(`${API_BASE}/settings`);
+      |                       ^
+  254 |     if (!res.ok) throw new Error("Failed to get settings");
+  255 |     return res.json();
+  256 |   }, (src/components/SettingsModal.tsx:54:15)
