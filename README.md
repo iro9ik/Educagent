@@ -1,4 +1,4 @@
-# EducAgent 🎓
+# EducAgent 
 
 **EducAgent** is an advanced AI-powered educational assistant designed to streamline learning through a sophisticated multi-agent orchestration. It leverages RAG (Retrieval-Augmented Generation) to process documents and provides interactive tools like automated quizzes, multi-layered evaluations, and persistent student memory.
 
@@ -23,13 +23,13 @@ EducAgent operates using a team of **10+ specialized agents**, each responsible 
 
 ## 🚀 Getting Started
 
-### 📋 Requirements
+### Requirements
 *   **Python 3.10+**
 *   **Node.js 18+**
 *   **Ollama**: For running local LLMs (Recommended: `qwen3:8b`).
 *   **PostgreSQL**: For persistent storage (or fallback to local).
 
-### 🛠️ Configuration
+### Configuration
 1.  **Environment Variables**:
     *   Rename `.env.example` to `.env`.
     *   Configure your `OLLAMA_BASE_URL` and `LLM_MODEL`.
@@ -39,7 +39,7 @@ EducAgent operates using a team of **10+ specialized agents**, each responsible 
 
 ---
 
-## 🏗️ How to Launch
+## How to Launch
 
 The project includes a unified launcher for Windows users.
 
