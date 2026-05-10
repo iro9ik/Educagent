@@ -1,9 +1,0 @@
-'[WinError 10061] No connection could be made because the target machine actively refused it' thrown while requesting HEAD https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/adapter_config.json
-Retrying in 1s [Retry 1/5].
-'[WinError 10061] No connection could be made because the target machine actively refused it' thrown while requesting HEAD https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/adapter_config.json
-Retrying in 1s [Retry 1/5].
-INFO:     Started server process [2100]
-INFO:     Waiting for application startup.
-Applying transformations:   0%|          | 0/1 [00:00<?, ?it/s]Applying transformations: 100%|##########| 1/1 [00:00<00:00,  1.18it/s]Applying transformations: 100%|##########| 1/1 [00:00<00:00,  1.18it/s]
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)

@@ -55,6 +55,12 @@ class ChatListResponse(BaseModel):
     chats: list[ChatSummary]
 
 
+class SaveMessageRequest(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
+
 # ---------------------------------------------------------------------------
 # Messages
 # ---------------------------------------------------------------------------
@@ -97,7 +103,7 @@ class QuizRequest(BaseModel):
 class QuizQuestion(BaseModel):
     question: str
     options: Optional[list[str]] = None
-    answer: str
+    correct_answer: str
     question_type: str = "mcq"  # "mcq" or "open_ended"
 
 
@@ -126,15 +132,18 @@ class EvaluationDetail(BaseModel):
     correct_answer: str
     is_correct: bool
     score: float
+    verdict: str = "INCORRECT"  # CORRECT | INCORRECT | PARTIAL | NO_ATTEMPT
     explanation: str
 
 
 class EvaluateResponse(BaseModel):
-    total_score: float
-    max_score: float
-    percentage: float
-    details: list[EvaluationDetail]
-    feedback: str
+    status: str = "SUCCESS"  # SUCCESS | FAILED_VALIDATION
+    reason: Optional[str] = None  # populated when status=FAILED_VALIDATION
+    total_score: Optional[float] = None
+    max_score: Optional[float] = None
+    percentage: Optional[float] = None
+    details: Optional[list[EvaluationDetail]] = None
+    feedback: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

@@ -29,6 +29,7 @@ from api.models import (
     QuizResponse,
     QuizQuestion,
     RenameRequest,
+    SaveMessageRequest,
     SettingsUpdate,
     UploadResponse,
 )
@@ -114,6 +115,17 @@ async def update_chat_settings(chat_id: str, body: SettingsUpdate):
     return {"message": "Settings updated", "settings": chat["settings"]}
 
 
+@router.post("/chat/{chat_id}/save-message", tags=["Chat"])
+async def save_chat_message(chat_id: str, body: SaveMessageRequest):
+    """Manually save a message to the chat history (e.g. for quiz results)."""
+    chat = chat_manager.get_chat(chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    chat_manager.add_message(chat_id, body.role, body.content)
+    return {"message": "Message saved", "chat_id": chat_id}
+
+
 # ---------------------------------------------------------------------------
 # Legacy Message endpoint (non-streaming, kept as fallback)
 # ---------------------------------------------------------------------------
@@ -128,6 +140,7 @@ async def send_message(chat_id: str, body: MessageRequest):
 
     search_enabled = body.search_enabled
     thinking_enabled = body.thinking_enabled
+    attached_files = body.attached_files
 
     history_messages = chat_manager.get_history(chat_id, last_n=6)
     history = "\n".join(
@@ -170,11 +183,15 @@ async def send_message(chat_id: str, body: MessageRequest):
         return MessageResponse(response=greeting)
 
     else:
+        chat_files = chat_manager.get_chat_files(chat_id)
+        active_sources = attached_files if attached_files else chat_files
+
         result = orchestrator.handle_question(
             query=body.content,
             search_enabled=search_enabled,
             thinking_enabled=thinking_enabled,
             history=history,
+            allowed_sources=active_sources,
         )
 
         response_text = result["response"]
@@ -341,9 +358,12 @@ async def upload_pdfs(files: list[UploadFile] = File(...)):
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 
+    SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".csv", ".json", ".md", ".pptx"}
+    
     saved_files = []
     for file in files:
-        if not file.filename.lower().endswith(".pdf"):
+        ext = Path(file.filename).suffix.lower()
+        if ext not in SUPPORTED_EXTENSIONS:
             continue
 
         dest = DATA_DIR / file.filename
@@ -353,13 +373,24 @@ async def upload_pdfs(files: list[UploadFile] = File(...)):
         saved_files.append(file.filename)
 
     if not saved_files:
-        raise HTTPException(status_code=400, detail="No valid PDF files found")
+        raise HTTPException(
+            status_code=400, 
+            detail=f"No valid files found. Supported formats: {', '.join(SUPPORTED_EXTENSIONS)}"
+        )
 
     from rag.indexer import index_documents
     from rag.retriever import rag_retriever
+    from config import CANCELLED_FILES
+
+    # Clear any previous cancellation flags for these specific files
+    for fname in saved_files:
+        if fname in CANCELLED_FILES:
+            CANCELLED_FILES.remove(fname)
 
     try:
-        index, num_docs = index_documents()
+        # Index only the newly saved files
+        file_paths = [DATA_DIR / f for f in saved_files]
+        index, num_docs = index_documents(files=file_paths)
         rag_retriever.refresh_index()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Indexing failed: {str(e)}")
@@ -376,6 +407,27 @@ async def list_uploaded_files():
     """List uploaded PDF files."""
     files = sorted(f.name for f in DATA_DIR.glob("*.pdf") if f.is_file())
     return {"files": files}
+
+
+@router.delete("/files/{filename}", tags=["Documents"])
+async def delete_uploaded_file(filename: str):
+    """Delete an uploaded PDF file and cancel its indexing if active."""
+    import urllib.parse
+    from config import CANCELLED_FILES
+    
+    filename = urllib.parse.unquote(filename)
+    
+    # Register cancellation
+    CANCELLED_FILES.add(filename)
+    
+    file_path = DATA_DIR / filename
+    if file_path.exists():
+        try:
+            file_path.unlink()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
+    
+    return {"message": "File deleted and indexing cancelled", "filename": filename}
 
 
 # ---------------------------------------------------------------------------
@@ -413,14 +465,20 @@ async def generate_quiz(body: QuizRequest):
         raise HTTPException(status_code=502, detail=str(e))
 
     if result.get("error"):
-        raise HTTPException(status_code=400, detail=result["error"])
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "status": "FAILED_VALIDATION",
+                "reason": result["error"],
+            },
+        )
 
     questions = []
     for q in result.get("questions", []):
         questions.append(QuizQuestion(
             question=q.get("question", ""),
             options=q.get("options"),
-            answer=q.get("answer", ""),
+            correct_answer=q.get("correct_answer", ""),
             question_type=q.get("question_type", "mcq"),
         ))
 
@@ -452,6 +510,16 @@ async def evaluate_answers(body: EvaluateRequest):
         answers=answers,
     )
 
+    # Hard fail: return 422 so the frontend can display a clear error
+    if result.get("status") == "FAILED_VALIDATION":
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "status": "FAILED_VALIDATION",
+                "reason": result.get("reason", "Quiz validation failed"),
+            },
+        )
+
     details = []
     for eval_item, answer in zip(result["evaluations"], answers):
         details.append(EvaluationDetail(
@@ -460,10 +528,12 @@ async def evaluate_answers(body: EvaluateRequest):
             correct_answer=answer["correct_answer"],
             is_correct=eval_item.get("is_correct", False),
             score=eval_item.get("score", 0.0),
+            verdict=eval_item.get("verdict", "INCORRECT"),
             explanation=eval_item.get("explanation", ""),
         ))
 
     return EvaluateResponse(
+        status="SUCCESS",
         total_score=result["total_score"],
         max_score=result["max_score"],
         percentage=result["percentage"],
@@ -491,27 +561,18 @@ async def get_feedback(user_id: str):
     )
 
 @router.get("/health/ollama", tags=["Health"])
-async def check_ollama_health():
+async def check_ollama_health(base_url: str = None):
     """Check if local Ollama is running and the configured model is available."""
     import httpx
     from config import config
 
+    target_url = base_url if base_url else config.OLLAMA_BASE_URL
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
-            response = await client.get(f"{config.OLLAMA_BASE_URL}/api/tags")
+            response = await client.get(f"{target_url}/api/tags")
             response.raise_for_status()
-            data = response.json()
-            models = [m.get("name", "") for m in data.get("models", [])]
-            model_available = any(
-                name == config.LLM_MODEL or name.startswith(f"{config.LLM_MODEL}:")
-                for name in models
-            )
-            if not model_available:
-                return {
-                    "status": "error",
-                    "message": f"Ollama is running, but {config.LLM_MODEL} is not installed",
-                }
-            return {"status": "ok", "message": "Ollama model is available"}
+            # If we get a 200 OK from /api/tags, Ollama is running and accessible.
+            return {"status": "ok", "message": "Ollama is connected and available"}
     except Exception as e:
         return {"status": "error", "message": "Ollama is not accessible"}
 

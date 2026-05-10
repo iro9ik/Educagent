@@ -240,6 +240,11 @@ class AsyncioGenerationManager(GenerationManager):
                 if filename not in chat_files:
                     chat_files.append(filename)
 
+            # Determine the active context for this specific message.
+            # If the user just attached a file, restrict RAG to only that file.
+            # Otherwise, search across all files in the chat history.
+            active_sources = attached_files if attached_files else chat_files
+
             # Use a queue to pass chunks from the blocking generator thread
             # to the async event loop without blocking it
             chunk_queue: asyncio.Queue = asyncio.Queue()
@@ -253,7 +258,7 @@ class AsyncioGenerationManager(GenerationManager):
                         search_enabled=search_enabled,
                         thinking_enabled=thinking_enabled,
                         history=history,
-                        allowed_sources=chat_files,
+                        allowed_sources=active_sources,
                     ):
                         if gen.cancel_event.is_set():
                             break

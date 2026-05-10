@@ -24,7 +24,7 @@ class BaseAgent:
     Base class for all EducAgent agents.
     Each agent has a role, a system prompt, and uses the shared LLM.
     """
-    TIMEOUT_SECONDS = 30  # Max time for any single agent call
+    TIMEOUT_SECONDS = 300  # Max time for any single agent call
 
     def __init__(self, name: str, system_prompt: str):
         self.name = name
@@ -39,8 +39,11 @@ class BaseAgent:
         """
         Run the agent with the given input and timeout protection.
         """
+        import datetime
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        temporal_prompt = f"{self.system_prompt}\n\nCurrent Date and Time: {now}"
         messages = [
-            SystemMessage(content=self.system_prompt),
+            SystemMessage(content=temporal_prompt),
             HumanMessage(content=user_input),
         ]
 
@@ -62,8 +65,11 @@ class BaseAgent:
 
     def stream(self, user_input: str, **kwargs):
         """Stream chunks of the response with timeout on first chunk."""
+        import datetime
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        temporal_prompt = f"{self.system_prompt}\n\nCurrent Date and Time: {now}"
         messages = [
-            SystemMessage(content=self.system_prompt),
+            SystemMessage(content=temporal_prompt),
             HumanMessage(content=user_input),
         ]
 
@@ -112,19 +118,30 @@ class BaseAgent:
         if isinstance(error, (AgentTimeoutError, RateLimitError)):
             return error
 
-        error_str = str(error).lower()
-        if "429" in error_str or "rate limit" in error_str or "rate limited" in error_str:
-            return RateLimitError(f"{self.name}: Rate limited by provider")
-        if "connection error" in error_str or "connecterror" in error_str or "connection refused" in error_str:
+        error_str = str(error)
+        
+        # Try to extract more details if it's an API error
+        if hasattr(error, "response") and hasattr(error.response, "text"):
+            error_str += f" | {error.response.text}"
+        elif hasattr(error, "body"):
+            error_str += f" | {error.body}"
+
+        error_str_lower = error_str.lower()
+        if "429" in error_str_lower or "rate limit" in error_str_lower or "rate limited" in error_str_lower:
+            return RateLimitError(f"{self.name}: Rate limited by provider. ({error_str})")
+        if "connection error" in error_str_lower or "connecterror" in error_str_lower or "connection refused" in error_str_lower:
             return ConnectionError(
                 f"{self.name}: Could not connect to the configured model provider. "
-                "Check the API base URL, API key, and model name."
+                "Check the API base URL, API key, and model name. "
+                f"Details: {error_str}"
             )
-        if "timeout" in error_str or "timed out" in error_str:
+        if "timeout" in error_str_lower or "timed out" in error_str_lower:
             if first_chunk_received:
-                return AgentTimeoutError(f"{self.name}: Timed out after {self.TIMEOUT_SECONDS}s")
-            return AgentTimeoutError(f"{self.name}: No response from provider within {self.TIMEOUT_SECONDS}s")
-        return error
+                return AgentTimeoutError(f"{self.name}: Timed out after {self.TIMEOUT_SECONDS}s. Details: {error_str}")
+            return AgentTimeoutError(f"{self.name}: No response from provider within {self.TIMEOUT_SECONDS}s. Details: {error_str}")
+        
+        # Return a standard Exception with the enhanced error string
+        return Exception(f"{self.name} Error: {error_str}")
 
     def __repr__(self):
         return f"<{self.__class__.__name__}(name={self.name!r})>"

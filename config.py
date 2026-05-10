@@ -17,6 +17,9 @@ from api.database import SessionLocal, GlobalConfig
 
 load_dotenv()
 
+# Global registry for cancelled file indexing tasks
+CANCELLED_FILES: set[str] = set()
+
 # --- Paths ---
 BASE_DIR = Path(__file__).resolve().parent
 STORAGE_DIR = BASE_DIR / "storage"
@@ -134,37 +137,37 @@ class Config:
             except Exception:
                 use_ollama = False
 
-        def load_local_hf_embedding():
-            try:
-                from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-                return HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
-            except Exception as e:
-                print(f"[!] Warning: Could not initialize HuggingFace embeddings: {e}")
-                return None
-
         if use_ollama:
             try:
                 from llama_index.embeddings.ollama import OllamaEmbedding
                 self.embed_model = OllamaEmbedding(
                     model_name=self.EMBED_MODEL,
                     base_url=self.OLLAMA_BASE_URL,
+                    embed_batch_size=1,
                 )
             except Exception:
-                self.embed_model = load_local_hf_embedding()
+                from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+                self.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
         else:
-            self.embed_model = load_local_hf_embedding()
+            from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+            self.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
         if self.LLM_PROVIDER == "custom" or self.LLM_PROVIDER == "openai":
             # For custom providers (like OpenRouter), default to local HF embeddings
             # to avoid requiring the user to have Ollama installed/running just for RAG.
-            self.embed_model = load_local_hf_embedding()
+            from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+            self.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+
+        # Wrap embedding model for cancellation support
+        if self.embed_model:
+            from rag.indexer import CancellableEmbeddingWrapper
+            self.embed_model = CancellableEmbeddingWrapper(self.embed_model)
 
         # Update LlamaIndex global settings
         Settings.llm = self.llama_llm
-        if self.embed_model is not None:
-            Settings.embed_model = self.embed_model
-        Settings.chunk_size = 512
-        Settings.chunk_overlap = 50
+        Settings.embed_model = self.embed_model
+        Settings.chunk_size = 128
+        Settings.chunk_overlap = 10
 
     def update(self, provider: str, base_url: str, api_key: Optional[str], model: str, embed_model: str):
         self.LLM_PROVIDER = provider
@@ -172,8 +175,25 @@ class Config:
         self.API_KEY = api_key
         self.LLM_MODEL = model
         self.EMBED_MODEL = embed_model
+        
+        # Re-derive OLLAMA_BASE_URL when settings change
+        self.OLLAMA_BASE_URL = self.API_BASE_URL.replace("/v1", "") if self.LLM_PROVIDER == "custom" else os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        
         self._save_to_db()
         self.initialize()
+
+_chroma_clients = {}
+
+def get_chroma_client():
+    """Returns a cached ChromaDB client with a path specific to the current embedding model."""
+    model_suffix = config.EMBED_MODEL.replace("/", "_").replace(":", "_")
+    if model_suffix not in _chroma_clients:
+        model_path = CHROMA_DIR / model_suffix
+        model_path.mkdir(parents=True, exist_ok=True)
+        _chroma_clients[model_suffix] = chromadb.PersistentClient(path=str(model_path))
+    return _chroma_clients[model_suffix]
+
+CHROMA_COLLECTION_NAME = "educagent_docs"
 
 # Singleton instance
 config = Config()
@@ -188,6 +208,3 @@ def get_llama_llm():
 def get_embed_model():
     return config.embed_model
 
-# ChromaDB client (persistent)
-chroma_client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-CHROMA_COLLECTION_NAME = "educagent_docs"

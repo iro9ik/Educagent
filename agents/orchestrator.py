@@ -93,7 +93,6 @@ class OrchestratorAgent(BaseAgent):
         if thinking_enabled:
             pipeline_log.append("🧠 Thinking Agent: Analyzing and reasoning...")
             thinking_output = thinking_agent.run(query=query, context=fused_context)
-            # Use thinking output as enhanced context
             final_context = f"{fused_context}\n\nAnalysis:\n{thinking_output}"
         else:
             final_context = fused_context
@@ -106,7 +105,7 @@ class OrchestratorAgent(BaseAgent):
             history=history,
         )
 
-        # Step 6: Checker
+        # Step 6: Checker (Q&A pipeline — reviews answer quality only, returns string)
         pipeline_log.append("✅ Checker Agent: Reviewing answer quality...")
         final_answer = checker_agent.run(query=query, draft_answer=draft_answer)
 
@@ -172,8 +171,8 @@ class OrchestratorAgent(BaseAgent):
         # Step 1: RAG
         rag_context = ""
         sources = []
-        if allowed_sources:
-            yield {"type": "agent_status", "agent": "rag", "status": "running", "label": "Reading chat files..."}
+        if allowed_sources is None or len(allowed_sources) > 0:
+            yield {"type": "agent_status", "agent": "rag", "status": "running", "label": "Reading the files..."}
             t0 = time.time()
             try:
                 rag_result = rag_agent.run(query, allowed_sources=allowed_sources)
@@ -284,33 +283,98 @@ class OrchestratorAgent(BaseAgent):
         answers: list[dict],
     ) -> dict:
         """
-        Evaluation pipeline.
-        Evaluation → Memory → Feedback
-        """
-        # Step 1: Evaluate answers
-        evaluations = evaluation_agent.run(answers=answers)
+        Hardened 3-layer evaluation pipeline.
 
-        # Step 2: Store mistakes in memory
+        Layer 1 — VALIDATION + EVALUATION (EvaluationAgent)
+          Fails fast if any correct_answer is missing.
+          Returns locked {verdict, score, is_correct} per question.
+
+        Layer 2 — EXPLANATION (CheckerAgent, read-only)
+          May only improve explanation text.
+          Cannot modify verdict, score, or is_correct.
+
+        Layer 3 — PRESENTATION (this method)
+          Builds the final markdown feedback from locked results.
+
+        Returns dict with status='FAILED_VALIDATION' if validation fails,
+        or full result dict on success.
+        """
+        # ── Layer 1: Validate + Evaluate (DECISION LOCK) ──────────────────
+        eval_result = evaluation_agent.run(answers=answers)
+
+        # Hard stop on validation failure — propagate up to route handler
+        if eval_result["status"] == "FAILED_VALIDATION":
+            return eval_result
+
+        evaluations = eval_result["evaluations"]   # contains locked verdict/score
+        summary = eval_result["summary"] or ""
+        recommendations = eval_result["recommendations"]
+        total_score = eval_result["total_score"]
+        max_score = eval_result["max_score"]
+        percentage = eval_result["percentage"]
+
+        # ── Layer 2: Improve explanations (EXPLANATION ONLY, scores immutable) ──
+        for eval_item, ans in zip(evaluations, answers):
+            improved = checker_agent.improve_explanation(
+                question=ans["question"],
+                given_answer=ans["given_answer"],
+                correct_answer=ans["correct_answer"],
+                verdict=eval_item["verdict"],      # read-only
+                score=eval_item["score"],          # read-only
+                draft_explanation=eval_item["explanation"],
+            )
+            # Only update explanation — verdict/score/is_correct are untouched
+            eval_item["explanation"] = improved
+
+        # ── Layer 3: Store mistakes in memory ────────────────────────────
         memory_result = memory_agent.run(
             user_id=user_id,
             evaluations=evaluations,
             answers=answers,
         )
 
-        # Step 3: Generate feedback
-        feedback_result = feedback_agent.run(user_id=user_id)
+        # ── Layer 3: Build markdown feedback (PRESENTATION) ──────────────
+        feedback_md = f"{summary}\n\n"
+        feedback_md += "### 📝 Per-Question Feedback\n\n"
 
-        # Compute scores
-        total_score = sum(e.get("score", 0) for e in evaluations)
-        max_score = float(len(answers))
-        percentage = (total_score / max_score * 100) if max_score > 0 else 0
+        for i, (eval_item, ans) in enumerate(zip(evaluations, answers), 1):
+            verdict = eval_item["verdict"]
+            score = eval_item["score"]
+            is_correct = eval_item["is_correct"]
+
+            if verdict == "CORRECT":
+                icon = "✅"
+            elif verdict == "PARTIAL":
+                icon = "⚠️"
+            elif verdict == "NO_ATTEMPT":
+                icon = "⬜"
+            else:
+                icon = "❌"
+
+            q_text = str(ans["question"]).strip().strip("* ")
+            feedback_md += f"### Q{i}. {q_text}\n\n"
+            feedback_md += f"**Your Answer:** {ans['given_answer'] or '*No answer provided*'} {icon}\n"
+
+            if not is_correct and score < 1.0:
+                # correct_answer is guaranteed non-empty by the validation gate
+                feedback_md += f"**Correct Answer:** {ans['correct_answer']} ✅\n"
+
+            feedback_md += f"\n**Explanation:** {eval_item['explanation']}\n\n"
+
+        if recommendations:
+            feedback_md += "### 📚 Study Recommendations\n"
+            for rec in recommendations:
+                # Recommendations are guaranteed to be plain strings by evaluation_agent
+                feedback_md += f"- {rec}\n"
+            feedback_md += "\n"
 
         return {
+            "status": "SUCCESS",
             "total_score": round(total_score, 2),
             "max_score": max_score,
             "percentage": round(percentage, 1),
             "evaluations": evaluations,
-            "feedback": feedback_result.get("summary", ""),
+            "feedback": feedback_md.strip(),
             "weak_topics": memory_result.get("weak_topics", {}),
         }
 
